@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'models/activity_item.dart';
 import 'providers/app_provider.dart';
@@ -25,7 +27,7 @@ class JiwooApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Jiwoo Tracker',
+      title: 'Jiwoo Smart Planner',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
@@ -101,9 +103,15 @@ class _LoginPageState extends State<LoginPage> {
                       size: 56, color: Colors.indigo),
                   const SizedBox(height: 12),
                   const Text(
-                    'Jiwoo Daily Planner',
+                    'Jiwoo Smart Planner',
                     textAlign: TextAlign.center,
                     style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Catatan harian dengan Pomodoro Timer, Pengingat Jadwal, dan Statistik Progres',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.black54),
                   ),
                   const SizedBox(height: 24),
                   TextFormField(
@@ -159,6 +167,14 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   final ScrollController _scrollController = ScrollController();
+  final TextEditingController _searchController = TextEditingController();
+  final List<String> _filterOptions = [
+    'Semua',
+    'Proyek',
+    'Kuliah',
+    'Latihan',
+    'Evaluasi',
+  ];
 
   @override
   void initState() {
@@ -174,25 +190,51 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     _scrollController.dispose();
+    _searchController.dispose();
     super.dispose();
+  }
+
+  String _formatDateTime(DateTime dt) {
+    final d = dt.day.toString().padLeft(2, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    final h = dt.hour.toString().padLeft(2, '0');
+    final min = dt.minute.toString().padLeft(2, '0');
+    return '$d/$m/${dt.year} $h:$min';
+  }
+
+  Future<void> _exportReport(BuildContext context, AppProvider provider) async {
+    final report = provider.generateMarkdownReport();
+    await Clipboard.setData(ClipboardData(text: report));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Laporan progres harian disalin ke clipboard (Markdown)!'),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<AppProvider>();
     final items = provider.activities;
+    final percent = (provider.completionRate * 100).round();
 
     return Scaffold(
       appBar: AppBar(
         title: Text('Halo, ${provider.userName ?? 'Pengguna'}'),
         actions: [
           IconButton(
+            tooltip: 'Salin Laporan Harian',
+            onPressed: () => _exportReport(context, provider),
+            icon: const Icon(Icons.ios_share),
+          ),
+          IconButton(
             tooltip: 'Perbarui Kutipan API',
             onPressed: provider.isLoadingQuote ? null : provider.refreshQuote,
             icon: const Icon(Icons.format_quote),
           ),
           IconButton(
-            tooltip: 'Profil & Logout',
+            tooltip: 'Profil & Statistik',
             onPressed: () {
               Navigator.push(
                 context,
@@ -213,24 +255,113 @@ class _HomePageState extends State<HomePage> {
             itemCount: items.length + 2,
             itemBuilder: (context, index) {
               if (index == 0) {
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 16),
-                  child: Padding(
-                    padding: const EdgeInsets.all(14),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Kutipan Harian (Public API)',
-                          style: TextStyle(fontWeight: FontWeight.bold),
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    // Dashboard Statistik & Streak
+                    Card(
+                      color: Theme.of(context).colorScheme.primaryContainer,
+                      margin: const EdgeInsets.only(bottom: 12),
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  'Ringkasan Produktivitas',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.bold, fontSize: 15),
+                                ),
+                                Chip(
+                                  avatar: const Icon(Icons.local_fire_department,
+                                      size: 16, color: Colors.deepOrange),
+                                  label: Text(
+                                      'Streak ${provider.productivityStreak} Hari'),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            LinearProgressIndicator(
+                              value: provider.completionRate,
+                              minHeight: 8,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Selesai: ${provider.completedCount}/${provider.totalActivitiesCount} ($percent%) • Total Fokus: ${provider.totalFocusMinutes} menit',
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 6),
-                        provider.isLoadingQuote
-                            ? const LinearProgressIndicator()
-                            : Text(provider.dailyQuote),
-                      ],
+                      ),
                     ),
-                  ),
+
+                    // Kutipan API
+                    Card(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      child: Padding(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Kutipan Harian (Public API)',
+                              style: TextStyle(fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 6),
+                            provider.isLoadingQuote
+                                ? const LinearProgressIndicator()
+                                : Text(provider.dailyQuote),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Pencarian Real-time
+                    TextField(
+                      controller: _searchController,
+                      onChanged: provider.setSearchQuery,
+                      decoration: InputDecoration(
+                        hintText: 'Cari judul, catatan, atau kategori...',
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: provider.searchQuery.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.clear),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  provider.setSearchQuery('');
+                                },
+                              )
+                            : null,
+                        border: const OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+
+                    // Filter Kategori
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: _filterOptions.map((cat) {
+                          final selected =
+                              provider.selectedCategoryFilter == cat;
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: FilterChip(
+                              label: Text(cat),
+                              selected: selected,
+                              onSelected: (_) => provider.setCategoryFilter(cat),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                 );
               }
 
@@ -244,7 +375,7 @@ class _HomePageState extends State<HomePage> {
                             child: const Text('Muat Lebih Banyak (Pagination)'),
                           )
                         : Text(
-                            'Menampilkan ${items.length} dari ${provider.totalActivitiesCount} aktivitas',
+                            'Menampilkan ${items.length} dari ${provider.filteredCount} aktivitas',
                           ),
                   ),
                 );
@@ -258,15 +389,62 @@ class _HomePageState extends State<HomePage> {
                     value: item.isCompleted,
                     onChanged: (_) => provider.toggleComplete(item.id),
                   ),
-                  title: Text(
-                    item.title,
-                    style: TextStyle(
-                      decoration:
-                          item.isCompleted ? TextDecoration.lineThrough : null,
-                    ),
+                  title: Row(
+                    children: [
+                      if (item.isPinned)
+                        const Padding(
+                          padding: EdgeInsets.only(right: 6),
+                          child: Icon(Icons.push_pin,
+                              size: 16, color: Colors.indigo),
+                        ),
+                      Expanded(
+                        child: Text(
+                          item.title,
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            decoration: item.isCompleted
+                                ? TextDecoration.lineThrough
+                                : null,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  subtitle: Text('${item.category} • ${item.notes}'),
-                  trailing: const Icon(Icons.chevron_right),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('${item.category} • ${item.notes}'),
+                      if (item.deadline != null || item.focusMinutes > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Wrap(
+                            spacing: 8,
+                            children: [
+                              if (item.deadline != null)
+                                Text(
+                                  'Deadline: ${_formatDateTime(item.deadline!)}',
+                                  style: const TextStyle(
+                                      fontSize: 12, color: Colors.deepOrange),
+                                ),
+                              if (item.focusMinutes > 0)
+                                Text(
+                                  'Fokus: ${item.focusMinutes}m',
+                                  style: const TextStyle(
+                                      fontSize: 12, color: Colors.teal),
+                                ),
+                            ],
+                          ),
+                        ),
+                    ],
+                  ),
+                  trailing: IconButton(
+                    tooltip: item.isPinned ? 'Lepas Pin' : 'Sematkan Prioritas',
+                    icon: Icon(
+                      item.isPinned ? Icons.push_pin : Icons.push_pin_outlined,
+                      color: item.isPinned ? Colors.indigo : null,
+                    ),
+                    onPressed: () => provider.togglePin(item.id),
+                  ),
                   onTap: () {
                     Navigator.push(
                       context,
@@ -310,6 +488,8 @@ class _AddActivityPageState extends State<AddActivityPage> {
   late final TextEditingController _notesController;
   late String _selectedCategory;
   late bool _isCompleted;
+  late bool _isPinned;
+  DateTime? _selectedDeadline;
   String? _errorText;
 
   @override
@@ -321,6 +501,8 @@ class _AddActivityPageState extends State<AddActivityPage> {
         TextEditingController(text: widget.existingItem?.notes ?? '');
     _selectedCategory = widget.existingItem?.category ?? 'Proyek';
     _isCompleted = widget.existingItem?.isCompleted ?? false;
+    _isPinned = widget.existingItem?.isPinned ?? false;
+    _selectedDeadline = widget.existingItem?.deadline;
   }
 
   @override
@@ -328,6 +510,35 @@ class _AddActivityPageState extends State<AddActivityPage> {
     _titleController.dispose();
     _notesController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickDeadline() async {
+    final now = DateTime.now();
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _selectedDeadline ?? now,
+      firstDate: now,
+      lastDate: DateTime(now.year + 3),
+    );
+    if (date == null || !mounted) return;
+
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(
+        _selectedDeadline ?? now.add(const Duration(hours: 1)),
+      ),
+    );
+    if (time == null) return;
+
+    setState(() {
+      _selectedDeadline = DateTime(
+        date.year,
+        date.month,
+        date.day,
+        time.hour,
+        time.minute,
+      );
+    });
   }
 
   Future<void> _saveForm() async {
@@ -339,6 +550,8 @@ class _AddActivityPageState extends State<AddActivityPage> {
         title: _titleController.text,
         category: _selectedCategory,
         notes: _notesController.text,
+        isPinned: _isPinned,
+        deadline: _selectedDeadline,
       );
     } else {
       err = await provider.updateActivity(
@@ -347,6 +560,9 @@ class _AddActivityPageState extends State<AddActivityPage> {
         category: _selectedCategory,
         notes: _notesController.text,
         isCompleted: _isCompleted,
+        isPinned: _isPinned,
+        deadline: _selectedDeadline,
+        clearDeadline: _selectedDeadline == null,
       );
     }
 
@@ -398,14 +614,34 @@ class _AddActivityPageState extends State<AddActivityPage> {
                 border: OutlineInputBorder(),
               ),
             ),
-            if (isEdit) ...[
-              const SizedBox(height: 10),
+            const SizedBox(height: 10),
+            SwitchListTile(
+              title: const Text('Sematkan di Paling Atas (Pin Prioritas)'),
+              value: _isPinned,
+              onChanged: (v) => setState(() => _isPinned = v),
+            ),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.alarm),
+              title: Text(
+                _selectedDeadline == null
+                    ? 'Atur Pengingat Deadline (Opsional)'
+                    : 'Deadline: ${_selectedDeadline!.day}/${_selectedDeadline!.month}/${_selectedDeadline!.year} ${_selectedDeadline!.hour.toString().padLeft(2, '0')}:${_selectedDeadline!.minute.toString().padLeft(2, '0')}',
+              ),
+              trailing: _selectedDeadline != null
+                  ? IconButton(
+                      icon: const Icon(Icons.close),
+                      onPressed: () => setState(() => _selectedDeadline = null),
+                    )
+                  : null,
+              onTap: _pickDeadline,
+            ),
+            if (isEdit)
               SwitchListTile(
                 title: const Text('Tandai Selesai'),
                 value: _isCompleted,
                 onChanged: (v) => setState(() => _isCompleted = v),
               ),
-            ],
             if (_errorText != null) ...[
               const SizedBox(height: 8),
               Text(_errorText!, style: const TextStyle(color: Colors.red)),
@@ -422,21 +658,69 @@ class _AddActivityPageState extends State<AddActivityPage> {
   }
 }
 
-class ActivityDetailPage extends StatelessWidget {
+class ActivityDetailPage extends StatefulWidget {
   final String activityId;
 
   const ActivityDetailPage({super.key, required this.activityId});
 
   @override
+  State<ActivityDetailPage> createState() => _ActivityDetailPageState();
+}
+
+class _ActivityDetailPageState extends State<ActivityDetailPage> {
+  static const int _defaultSeconds = 25 * 60;
+  int _remainingSeconds = _defaultSeconds;
+  Timer? _timer;
+  bool _isRunning = false;
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _toggleTimer(ActivityItem item) {
+    if (_isRunning) {
+      _timer?.cancel();
+      setState(() => _isRunning = false);
+      return;
+    }
+
+    setState(() => _isRunning = true);
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) async {
+      if (_remainingSeconds <= 1) {
+        timer.cancel();
+        if (!mounted) return;
+        setState(() {
+          _isRunning = false;
+          _remainingSeconds = _defaultSeconds;
+        });
+        await context.read<AppProvider>().recordFocusSession(item.id, 25);
+      } else {
+        if (!mounted) return;
+        setState(() => _remainingSeconds--);
+      }
+    });
+  }
+
+  void _resetTimer() {
+    _timer?.cancel();
+    setState(() {
+      _isRunning = false;
+      _remainingSeconds = _defaultSeconds;
+    });
+  }
+
+  String _formatClock(int totalSec) {
+    final m = (totalSec ~/ 60).toString().padLeft(2, '0');
+    final s = (totalSec % 60).toString().padLeft(2, '0');
+    return '$m:$s';
+  }
+
+  @override
   Widget build(BuildContext context) {
     final provider = context.watch<AppProvider>();
-    ActivityItem? item;
-    for (final a in provider.activities) {
-      if (a.id == activityId) {
-        item = a;
-        break;
-      }
-    }
+    final item = provider.findById(widget.activityId);
 
     if (item == null) {
       return Scaffold(
@@ -447,7 +731,7 @@ class ActivityDetailPage extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Detail Aktivitas'),
+        title: const Text('Detail & Focus Timer'),
         actions: [
           IconButton(
             tooltip: 'Edit',
@@ -464,30 +748,78 @@ class ActivityDetailPage extends StatelessWidget {
           IconButton(
             tooltip: 'Hapus',
             onPressed: () async {
-              await provider.deleteActivity(item!.id);
+              await provider.deleteActivity(item.id);
               if (context.mounted) Navigator.pop(context);
             },
             icon: const Icon(Icons.delete),
           ),
         ],
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
               item.title,
               style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            Text('Kategori: ${item.category}'),
-            const SizedBox(height: 8),
-            Text('Status: ${item.isCompleted ? 'Selesai' : 'Berjalan'}'),
+            Text('Kategori: ${item.category} • Prioritas: ${item.isPinned ? 'Dipin' : 'Normal'}'),
+            const SizedBox(height: 6),
+            Text('Status: ${item.isCompleted ? 'Selesai' : 'Berjalan'} • Total Fokus: ${item.focusMinutes} menit'),
             const SizedBox(height: 16),
             const Text('Catatan:', style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 6),
             Text(item.notes),
+            const SizedBox(height: 24),
+
+            // Smart Focus Timer (Pomodoro)
+            Card(
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  children: [
+                    const Text(
+                      'Smart Focus Timer (Pomodoro 25 Menit)',
+                      style: TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      _formatClock(_remainingSeconds),
+                      style: const TextStyle(
+                        fontSize: 42,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        FilledButton.icon(
+                          onPressed: () => _toggleTimer(item),
+                          icon: Icon(_isRunning ? Icons.pause : Icons.play_arrow),
+                          label: Text(_isRunning ? 'Jeda' : 'Mulai Fokus'),
+                        ),
+                        const SizedBox(width: 10),
+                        OutlinedButton(
+                          onPressed: _resetTimer,
+                          child: const Text('Reset'),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    TextButton(
+                      onPressed: () =>
+                          provider.recordFocusSession(item.id, 25),
+                      child: const Text('Catat +25 Menit Fokus Manual'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -501,9 +833,10 @@ class ProfilePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<AppProvider>();
+    final breakdown = provider.categoryBreakdown;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Profil Pengguna')),
+      appBar: AppBar(title: const Text('Profil & Statistik')),
       body: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -511,11 +844,21 @@ class ProfilePage extends StatelessWidget {
           children: [
             Text('Nama: ${provider.userName ?? '-'}',
                 style: const TextStyle(fontSize: 16)),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Text('Email: ${provider.userEmail ?? '-'}',
                 style: const TextStyle(fontSize: 16)),
+            const SizedBox(height: 16),
+            const Text('Distribusi Kategori Aktivitas:',
+                style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            Text('Total Aktivitas Tersimpan: ${provider.totalActivitiesCount}'),
+            ...breakdown.entries.map(
+              (entry) => ListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: Text(entry.key),
+                trailing: Text('${entry.value} item'),
+              ),
+            ),
             const Spacer(),
             OutlinedButton.icon(
               onPressed: () async {

@@ -6,6 +6,9 @@ class ActivityItem {
   final String category;
   final String notes;
   final bool isCompleted;
+  final bool isPinned;
+  final DateTime? deadline;
+  final int focusMinutes;
   final DateTime createdAt;
 
   ActivityItem({
@@ -14,6 +17,9 @@ class ActivityItem {
     required this.category,
     required this.notes,
     this.isCompleted = false,
+    this.isPinned = false,
+    this.deadline,
+    this.focusMinutes = 0,
     required this.createdAt,
   });
 
@@ -23,6 +29,10 @@ class ActivityItem {
     String? category,
     String? notes,
     bool? isCompleted,
+    bool? isPinned,
+    DateTime? deadline,
+    bool clearDeadline = false,
+    int? focusMinutes,
     DateTime? createdAt,
   }) {
     return ActivityItem(
@@ -31,6 +41,9 @@ class ActivityItem {
       category: category ?? this.category,
       notes: notes ?? this.notes,
       isCompleted: isCompleted ?? this.isCompleted,
+      isPinned: isPinned ?? this.isPinned,
+      deadline: clearDeadline ? null : (deadline ?? this.deadline),
+      focusMinutes: focusMinutes ?? this.focusMinutes,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -42,6 +55,9 @@ class ActivityItem {
       'category': category,
       'notes': notes,
       'isCompleted': isCompleted,
+      'isPinned': isPinned,
+      'deadline': deadline?.toIso8601String(),
+      'focusMinutes': focusMinutes,
       'createdAt': createdAt.toIso8601String(),
     };
   }
@@ -53,6 +69,11 @@ class ActivityItem {
       category: map['category'] as String,
       notes: map['notes'] as String? ?? '',
       isCompleted: map['isCompleted'] as bool? ?? false,
+      isPinned: map['isPinned'] as bool? ?? false,
+      deadline: map['deadline'] != null
+          ? DateTime.tryParse(map['deadline'] as String)
+          : null,
+      focusMinutes: map['focusMinutes'] as int? ?? 0,
       createdAt:
           DateTime.tryParse(map['createdAt'] as String? ?? '') ?? DateTime.now(),
     );
