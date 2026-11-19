@@ -357,8 +357,8 @@ class AppProvider extends ChangeNotifier {
       ..writeln(
           '- **Progres:** $completedCount/$totalActivitiesCount selesai ($percent%)')
       ..writeln('- **Streak:** $productivityStreak hari | **Total Fokus:** $totalFocusMinutes menit')
-      ..writeln('
-## Daftar Aktivitas');
+      ..writeln('')
+      ..writeln('## Daftar Aktivitas');
 
     for (final item in _allActivities) {
       final box = item.isCompleted ? '[x]' : '[ ]';
